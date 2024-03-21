@@ -21,6 +21,7 @@ from m2ast.models.modules.pos import get_2d_sincos_pos_embed, get_2d_sincos_pos_
 from m2ast.models.modules.patch import PatchEmbed_new, PatchEmbed_org
 from timm.models.swin_transformer import SwinTransformerBlock
 from m2ast.models.modules.frontend import Melgram
+import wandb
 
 class AudioMAE(nn.Module):
     """ Masked Autoencoder with VisionTransformer backbone
@@ -505,6 +506,28 @@ class LightningAudioMAE(AudioMAE,pl.LightningModule):
         imgs = batch
         loss_recon, _, _ = self(imgs, mask_ratio=self.mask_ratio)
         self.log('train_loss', loss_recon, on_epoch=True, on_step=True, prog_bar=True, logger=True)
+        
+        # for training purposes, reconstruct the original image every 1000 steps
+        if self.global_step % 1000 == 0:
+            with torch.no_grad():
+                emb_enc, mask, ids_restore, _ = self.forward_encoder(imgs, mask_ratio=self.mask_ratio)
+                pred, _, _ = self.forward_decoder(emb_enc, ids_restore)
+                unpatchified_pred = self.unpatchify(pred)
+
+                sample_img = imgs[0].squeeze().cpu().numpy()
+                sample_pred = unpatchified_pred[0].squeeze().cpu().numpy()
+                # convert mask to shape (H, W)
+                mask = mask[0].cpu().numpy()
+                mask = mask.reshape(sample_img.shape)
+                
+                sample_masked_img = sample_img * (1 - mask)
+                
+                self.logger.experiment.log({
+                    "reconstructed": [wandb.Image(sample_pred, caption="reconstructed")],
+                    "original": [wandb.Image(sample_img, caption="original")],
+                    "masked": [wandb.Image(sample_masked_img, caption="masked")],
+                })
+            
         return loss_recon
 
     def validation_step(self, batch, batch_idx):
