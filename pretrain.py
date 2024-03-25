@@ -1,6 +1,6 @@
 
 from m2ast.models.audiomae import LightningAudioMAE
-from m2ast.dataloading.datamodules.ssl_datamodule import SSLDataModule
+from m2ast.dataloading.datamodules.datamodule import AudioDataModule
 from pytorch_lightning.cli import LightningCLI
 from pytorch_lightning.cli import SaveConfigCallback
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer
@@ -61,7 +61,7 @@ class MyLightningCLI(LightningCLI):
 
 if __name__ == "__main__":
 
-    cli = MyLightningCLI(model_class=LightningAudioMAE, datamodule_class=SSLDataModule, seed_everything_default=123,
+    cli = MyLightningCLI(model_class=LightningAudioMAE, datamodule_class=AudioDataModule, seed_everything_default=123,
                          run=False, save_config_callback=LoggerSaveConfigCallback, save_config_kwargs={"overwrite": True},)
     
     cli.instantiate_classes()

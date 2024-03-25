@@ -431,8 +431,7 @@ class AudioMAE(nn.Module):
     def extract_features(self, audio, freeze=False):
         
         with torch.no_grad():
-            imgs = self.frontend(audio)
-            emb_enc, _, _, _,_ = self.forward_encoder(imgs, mask_ratio=0.0)
+            emb_enc, _, _, _,_ = self.forward_encoder(audio, mask_ratio=0.0)
         return {
             'encoded': emb_enc,
         }

@@ -33,3 +33,12 @@ def load_full_audio(path, target_sr):
     # resample to target sample rate
     audio = torchaudio.functional.resample(audio, sr, target_sr)
     return audio
+
+
+def load_and_split(path, target_sr, target_n_samples):
+    audio = load_full_audio(path, target_sr)
+    audio = audio.squeeze()
+    # torch.split
+    audio = torch.split(audio, target_n_samples)[::-1]
+    audio = torch.stack(audio)
+    return audio

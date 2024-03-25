@@ -83,6 +83,7 @@ model:
   n_mels: 128
   sr: 44100
 data:
+  task : null
   audio_dir: "/import/c4dm-datasets/mtg-jamendo-raw/mtg-jamendo-dataset/mp3"
   target_len_s: null
   target_sr: 44100
