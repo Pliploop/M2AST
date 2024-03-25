@@ -34,13 +34,14 @@ class LoggerSaveConfigCallback(SaveConfigCallback):
                 dirpath=os.path.join(self.config['ckpt_path'], experiment_name),
                 filename='checkpoint-{step}-recent',  # This means all checkpoints are saved, not just the top k
                 every_n_train_steps = 1000,  
-                save_top_k = 1
+                save_top_k = 1,
+                save_last = True
             )
             
             recent_callback_step = ModelCheckpoint(
                 dirpath=os.path.join(self.config['ckpt_path'], experiment_name),
                 filename='checkpoint-{step}',  # This means all checkpoints are saved, not just the top k
-                every_n_train_steps = 50000,  
+                every_n_train_steps = 25000,  
                 save_top_k = -1
             )
             callbacks = [recent_callback_step_latest,recent_callback_step ]
@@ -81,4 +82,4 @@ if __name__ == "__main__":
     except:
         pass
 
-    # cli.trainer.fit(model=cli.model, datamodule=cli.datamodule, ckpt_path=cli.config.resume_from_checkpoint)
+    cli.trainer.fit(model=cli.model, datamodule=cli.datamodule, ckpt_path=cli.config.resume_from_checkpoint)

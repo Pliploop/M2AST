@@ -23,13 +23,15 @@ class SSLDataModule(pl.LightningDataModule):
         
     def fetch_annotations(self):
         
-        annotations = {}
+        annotations = []
         
-        ## scan audio_dir for any audio files, and create annotations with file_path and split
+        ## scan audio_dir for any audio files in dirs or subdirs, and create annotations with file_path and split
+        
         for root, dirs, files in os.walk(self.audio_dir):
-            audio_files = [f for f in files if f.split('.')[-1] in ['wav', 'mp3']]
-            annotations['file_path'] = [os.path.join(root, f) for f in audio_files]
-            
+            for file in files:
+                if file.endswith('.wav') or file.endswith('.mp3'):
+                    annotations.append({'file_path': os.path.join(root, file)})
+                        
         
         annotations = pd.DataFrame(annotations, columns = ['file_path'])
         annotations['split'] = 'train'
@@ -37,6 +39,8 @@ class SSLDataModule(pl.LightningDataModule):
         annotations = annotations.sample(frac=1).reset_index(drop=True)
         val_idx = int(len(annotations)*0.1)
         annotations.loc[:val_idx, 'split'] = 'val'
+        
+        print(annotations.head())
         
         return annotations
             

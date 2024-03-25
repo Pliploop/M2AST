@@ -27,7 +27,9 @@ class AudioDataset(Dataset):
         
         if self.transform and self.train and self.augmentations is not None:
             audio = self.augmentations(audio)
-            
+        
+        # mono
+        audio = audio.mean(dim=0, keepdim=True)
         
         if self.return_labels:
             return {

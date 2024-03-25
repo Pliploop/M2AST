@@ -1,9 +1,4 @@
-optimizer: 
-    class_path: torch.optim.Adam
-    init_args:
-      lr: 0.0001
-      eps: 1e-8
-      weight_decay: 0
+model:
   img_size:
   - 128
   - 1024
@@ -17,24 +12,6 @@ optimizer:
   decoder_depth: 2
   decoder_num_heads: 16
   mlp_ratio: 4.0
-  norm_pix_loss: false
-  audio_exp: true
-  alpha: 0.0
-  temperature: 0.2
-  mode: 0
-  contextual_depth: 8
-  use_custom_patch: false
-  split_pos: false
-  pos_trainable: false
-  use_nce: false
-  beta: 4.0
-  decoder_mode: 0
-  mask_t_prob: 0.6
-  mask_f_prob: 0.5
-  mask_2d: false
-  epoch: 0
-  no_shift: false
-  mask_ratio: 0.8
   n_fft: 2048
   hop_length: 512
   n_mels: 128

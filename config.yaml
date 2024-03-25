@@ -3,7 +3,8 @@ seed_everything: 123
 trainer:
   accelerator: auto
   strategy: auto
-  devices: auto
+  devices:
+  - 3
   num_nodes: 1
   precision: null
   logger: null
@@ -41,12 +42,22 @@ trainer:
   reload_dataloaders_every_n_epochs: 0
   default_root_dir: null
 model:
-  optimizer: 
+  optimizer:
     class_path: torch.optim.Adam
     init_args:
+      params: null
       lr: 0.0001
-      eps: 1e-8
-      weight_decay: 0
+      betas:
+      - 0.9
+      - 0.999
+      eps: 1.0e-08
+      weight_decay: 0.0
+      amsgrad: false
+      foreach: null
+      maximize: false
+      capturable: false
+      differentiable: false
+      fused: null
   img_size:
   - 128
   - 1024
@@ -83,17 +94,17 @@ model:
   n_mels: 128
   sr: 44100
 data:
-  audio_dir: "/import/c4dm-datasets/mtg-jamendo-raw/mtg-jamendo-dataset/mp3"
+  audio_dir: /import/c4dm-datasets/mtg-jamendo-raw/mtg-jamendo-dataset/mp3
   target_len_s: null
   target_sr: 44100
   target_n_samples: 524287
   augmentations: null
-  batch_size: 32
-  num_workers: 8
+  batch_size: 128
+  num_workers: 16
   transform: false
   val_split: 0.05
-log: false
+log: 'true'
 log_model: false
-ckpt_path: '/import/research_c4dm/jpmg86/AudioMAE/checkpoints'
+ckpt_path: /import/research_c4dm/jpmg86/AudioMAE/checkpoints
 resume_id: null
 resume_from_checkpoint: null

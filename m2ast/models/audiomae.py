@@ -100,7 +100,7 @@ class AudioMAE(nn.Module):
                 decoder_modules.append(
                     SwinTransformerBlock(
                         dim=decoder_embed_dim,
-                        num_heads=16,
+                        num_heads=decoder_num_heads,
                         feat_size=feat_size,
                         window_size=window_size,
                         shift_size=shift_size,
@@ -137,8 +137,6 @@ class AudioMAE(nn.Module):
         self.use_nce = use_nce
         self.beta = beta
 
-        self.log_softmax=nn.LogSoftmax(dim=-1)
-
         self.mask_t_prob=mask_t_prob
         self.mask_f_prob=mask_f_prob
         self.mask_2d=mask_2d
@@ -148,7 +146,6 @@ class AudioMAE(nn.Module):
         self.initialize_weights()
         self.first_run=True
         
-        self.frontend = Melgram(**kwargs)
 
     def initialize_weights(self):
         # initialization
@@ -226,8 +223,8 @@ class AudioMAE(nn.Module):
         specs: (N, 1, H, W)
         """
         p = self.patch_embed.patch_size[0]    
-        h = 1024//p
-        w = 128//p
+        h = 128//p
+        w = 1024//p
         x = x.reshape(shape=(x.shape[0], h, w, p, p, 1))
         x = torch.einsum('nhwpqc->nchpwq', x)
         specs = x.reshape(shape=(x.shape[0], 1, h * p, w * p))
@@ -315,8 +312,10 @@ class AudioMAE(nn.Module):
 
 
     def forward_encoder(self, x, mask_ratio, mask_2d=False):
+        
+        imgs = self.frontend(x)
         # embed patches
-        x = self.patch_embed(x)
+        x = self.patch_embed(imgs)
         ## pretty print some stuff when first run 
         if self.first_run:
             print(f'x shape: {x.shape}')
@@ -346,33 +345,8 @@ class AudioMAE(nn.Module):
         x = self.norm(x)
         #emb = self.encoder_emb(x)
 
-        return x, mask, ids_restore, None
+        return x, mask, ids_restore, None, imgs
 
-    def forward_encoder_no_mask(self, x):
-        # embed patches
-        x = self.patch_embed(x)
-
-        # add pos embed w/o cls token
-        x = x + self.pos_embed[:, 1:, :]
-
-        # masking: length -> length * mask_ratio
-        #x, mask, ids_restore = self.random_masking(x, mask_ratio)
-
-        # append cls token
-        cls_token = self.cls_token + self.pos_embed[:, :1, :]
-        cls_tokens = cls_token.expand(x.shape[0], -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
-
-        # apply Transformer blocks
-        contextual_embs=[]
-        for n, blk in enumerate(self.blocks):
-            x = blk(x)
-            if n > self.contextual_depth:
-                contextual_embs.append(self.norm(x))
-        #x = self.norm(x)
-        contextual_emb = torch.stack(contextual_embs,dim=0).mean(dim=0)
-
-        return contextual_emb
 
     def forward_decoder(self, x, ids_restore):
         # embed tokens
@@ -438,30 +412,41 @@ class AudioMAE(nn.Module):
         loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
         return loss      
 
-    def forward(self, imgs, mask_ratio=0.8):
+    def forward(self, imgs, mask_ratio=None):
         if mask_ratio is None:
             mask_ratio = self.mask_ratio
-        emb_enc, mask, ids_restore, _ = self.forward_encoder(imgs, mask_ratio, mask_2d=self.mask_2d)
+        emb_enc, mask, ids_restore, _, imgs = self.forward_encoder(imgs, mask_ratio, mask_2d=self.mask_2d)
         pred, _, _ = self.forward_decoder(emb_enc, ids_restore)  # [N, L, p*p*3]
         loss_recon = self.forward_loss(imgs, pred, mask, norm_pix_loss=self.norm_pix_loss)
         self.first_run=False
-        return loss_recon, pred, mask
+        return {
+            'loss': loss_recon,
+            'encoded': emb_enc,
+            'decoded': pred,
+            'mask': mask,
+            'ids_restore': ids_restore,
+            'imgs': imgs
+        }
     
-    def extract_features(self, audio):
+    def extract_features(self, audio, freeze=False):
+        
         with torch.no_grad():
             imgs = self.frontend(audio)
-            emb_enc, _, _, _ = self.forward_encoder(imgs, mask_ratio=0.0)
+            emb_enc, _, _, _,_ = self.forward_encoder(imgs, mask_ratio=0.0)
         return {
             'encoded': emb_enc,
         }
+
         
     def freeze(self):
         for param in self.parameters():
             param.requires_grad = False
+        self.eval()
             
     def unfreeze(self):
         for param in self.parameters():
             param.requires_grad = True
+        self.train()
     
     def discard_decoder(self):
         self.decoder_blocks = None
@@ -506,44 +491,45 @@ class LightningAudioMAE(AudioMAE,pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         audio = batch['audio']
-        imgs = self.frontend(audio)
-        loss_recon, _, _ = self(imgs, mask_ratio=self.mask_ratio)
-        self.log('train_loss', loss_recon, on_epoch=True, on_step=True, prog_bar=True, logger=True)
+        output = self(audio, mask_ratio=self.mask_ratio)
+        
+        loss_recon = output['loss']
+        
+        self.log('train_loss', loss_recon, on_epoch=True, on_step=True, prog_bar=True, logger=True, sync_dist=True)
         
         # for training purposes, reconstruct the original image every 1000 steps
-        if self.global_step % 5000 == 0:
+        if self.global_step % 2000 == 0 and self.logger is not None:
             with torch.no_grad():
-                sample_img, sample_pred, sample_masked_img = self.reconstruct_batch(batch)
+                sample_img, sample_pred, sample_masked_img = self.reconstruct_batch(audio)
                 
                 self.logger.experiment.log({
-                    "reconstructed": [wandb.Image(sample_pred, caption="reconstructed")],
-                    "original": [wandb.Image(sample_img, caption="original")],
-                    "masked": [wandb.Image(sample_masked_img, caption="masked")],
+                    "reconstructed": [wandb.Image(sample_pred[::-1,:], caption="reconstructed")],
+                    "original": [wandb.Image(sample_img[::-1,:], caption="original")],
+                    "masked": [wandb.Image(sample_masked_img[::-1,:], caption="masked")],
                 })
             
         return loss_recon
 
-    def reconstruct_batch(self, batch):
+    def reconstruct_batch(self, audio):
         with torch.no_grad():
-            audio = batch['audio']
-            imgs = self.frontend(audio)
-            emb_enc, mask, ids_restore, _ = self.forward_encoder(imgs, mask_ratio=self.mask_ratio)
+            emb_enc, mask, ids_restore, _, imgs = self.forward_encoder(audio, mask_ratio=self.mask_ratio)
             pred, _, _ = self.forward_decoder(emb_enc, ids_restore)
             unpatchified_pred = self.unpatchify(pred)
             sample_img = imgs[0].squeeze().detach().cpu().numpy()
             sample_pred = unpatchified_pred[0].squeeze().detach().cpu().numpy()
-            # convert mask to shape (H, W)
-            mask = mask[0].detach().cpu().numpy()
-            mask = mask.reshape(sample_img.shape)
+            # convert mask to shape (H, W) knowing that it is a 1D mask of unrolled patches
+            mask = mask.unsqueeze(-1).repeat(1,1, self.patch_size**2)
+            mask = self.unpatchify(mask)[0].squeeze().detach().cpu().numpy()
             sample_masked_img = sample_img * (1 - mask)
+            sample_pred = sample_pred * mask + sample_img * (1-mask)
         return sample_img, sample_pred, sample_masked_img
         
 
     def validation_step(self, batch, batch_idx):
         audio = batch['audio']
-        imgs = self.frontend(audio)
-        loss_recon, _, _ = self(imgs, mask_ratio=self.mask_ratio)
-        self.log('val_loss', loss_recon, on_epoch=True, on_step=False, prog_bar=True, logger=True)
+        output = self(audio, mask_ratio=self.mask_ratio)
+        loss_recon = output['loss']
+        self.log('val_loss', loss_recon, on_epoch=True, on_step=False, prog_bar=True, logger=True, sync_dist=True)
 
     def configure_optimizers(self):
         if self.optimizer is not None:

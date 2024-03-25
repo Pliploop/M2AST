@@ -7,7 +7,8 @@ __pycache__/
 *.so
 
 *.ipynb
-
+wandb/*
+wandb
 
 # Distribution / packaging
 .Python
